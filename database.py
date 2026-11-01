@@ -1,14 +1,24 @@
 """
 database.py
 Base de datos SQLite del Sistema de Gestión de la Calidad (SGC) y LMS de Posgrado.
-Implementa el modelo oficial de 4 Dimensiones, 12 Factores y 34 Estándares para
-la autoevaluación, aseguramiento de la calidad y acreditación de Maestrías y Doctorados.
+Soporta:
+  1. 4 Dimensiones, 12 Factores y 34 Estándares (SINEACE / SUNEDU)
+  2. Múltiples Programas de Posgrado (Doctorados y Maestrías)
+  3. Control de Acceso por Roles (RBAC):
+     - Administrador General: Vista global de todos los programas, métricas comparativas y gestión.
+     - Responsables de Programa: Acceso específico a su programa para autoevaluar y subir evidencias.
+  4. Repositorio de Evidencias Digitales con subida y almacenamiento de archivos.
 """
 
 import sqlite3
+import hashlib
 import os
+import shutil
+from datetime import datetime
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "sgc_posgrado.db")
+EVIDENCIAS_DIR = os.path.join(os.path.dirname(__file__), "evidencias")
+os.makedirs(EVIDENCIAS_DIR, exist_ok=True)
 
 
 def get_connection():
@@ -18,11 +28,16 @@ def get_connection():
     return conn
 
 
+def hash_password(password: str) -> str:
+    salt = "SGC_Posgrado_Salt_2026_Secure"
+    return hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
+
+
 def init_db():
     conn = get_connection()
     c = conn.cursor()
 
-    # 1. TABLAS ESTRUCTURALES DEL MODELO DE CALIDAD (SGC / SINEACE / SUNEDU)
+    # 1. TABLAS ESTRUCTURALES DEL MODELO DE CALIDAD (4 DIMENSIONES, 12 FACTORES, 34 ESTÁNDARES)
     c.execute("""
     CREATE TABLE IF NOT EXISTS sgc_dimensiones (
         id INTEGER PRIMARY KEY,
@@ -53,7 +68,7 @@ def init_db():
     );
     """)
 
-    # 2. TABLAS OPERATIVAS DEL PROGRAMA DE POSGRADO Y AUTOEVALUACIÓN
+    # 2. TABLA DE PROGRAMAS DE POSGRADO
     c.execute("""
     CREATE TABLE IF NOT EXISTS sgc_programas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,6 +84,23 @@ def init_db():
     );
     """)
 
+    # 3. TABLA DE USUARIOS Y ROLES (ADMINISTRADOR vs. RESPONSABLES DE PROGRAMA)
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS sgc_usuarios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        full_name TEXT NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('admin', 'responsable')),
+        programa_id INTEGER REFERENCES sgc_programas(id) ON DELETE SET NULL,
+        email TEXT DEFAULT '',
+        cargo TEXT DEFAULT '',
+        avatar TEXT DEFAULT '👤',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # 4. TABLA DE AUTOEVALUACIÓN POR PROGRAMA Y ESTÁNDAR
     c.execute("""
     CREATE TABLE IF NOT EXISTS sgc_autoevaluaciones (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,7 +109,7 @@ def init_db():
         estado_cumplimiento TEXT DEFAULT 'En Proceso' CHECK(estado_cumplimiento IN ('No Cumple', 'En Proceso', 'Cumple Parcial', 'Cumple Plenamente')),
         porcentaje REAL DEFAULT 50.0,
         justificacion TEXT DEFAULT '',
-        evidencias TEXT DEFAULT '',
+        evidencias_texto TEXT DEFAULT '',
         plan_mejora TEXT DEFAULT '',
         responsable TEXT DEFAULT '',
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -85,7 +117,21 @@ def init_db():
     );
     """)
 
-    # 3. TABLAS DE ARTICULACIÓN LMS DE POSGRADO
+    # 5. TABLA DE ARCHIVOS DE EVIDENCIAS SUBIDOS
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS sgc_evidencias_archivos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        programa_id INTEGER NOT NULL REFERENCES sgc_programas(id) ON DELETE CASCADE,
+        estandar_id INTEGER NOT NULL REFERENCES sgc_estandares(id) ON DELETE CASCADE,
+        nombre_archivo TEXT NOT NULL,
+        ruta_archivo TEXT NOT NULL,
+        tamanio_bytes INTEGER DEFAULT 0,
+        subido_por TEXT NOT NULL,
+        fecha_subida TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # 6. TABLAS DE ARTICULACIÓN LMS DE POSGRADO
     c.execute("""
     CREATE TABLE IF NOT EXISTS lms_cursos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -131,15 +177,15 @@ def init_db():
 
     conn.commit()
 
-    # Poblar dimensiones, factores y estándares si están vacías
+    # Poblar el marco SGC si está vacío
     c.execute("SELECT COUNT(*) as cnt FROM sgc_dimensiones")
     if c.fetchone()["cnt"] == 0:
         seed_sgc_framework(conn)
 
-    # Poblar programa de posgrado demo y autoevaluación inicial si está vacía
+    # Poblar programas y usuarios si están vacíos
     c.execute("SELECT COUNT(*) as cnt FROM sgc_programas")
     if c.fetchone()["cnt"] == 0:
-        seed_demo_program(conn)
+        seed_multi_programs_and_users(conn)
 
     conn.close()
 
@@ -230,107 +276,200 @@ def seed_sgc_framework(conn):
     conn.commit()
 
 
-def seed_demo_program(conn):
+def seed_multi_programs_and_users(conn):
     c = conn.cursor()
+    pwd = hash_password("clave123")
 
-    # 1. Programa de Doctorado Demo
+    # 1. Crear 4 Programas de Posgrado
+    programas = [
+        ('DOC-GPG', 'Doctorado en Gestión Pública y Gobernabilidad', 'Doctorado', 'Escuela de Posgrado', 'Dr. Marcos Canchari', '2026-I'),
+        ('MAE-EDU', 'Maestría en Educación con Mención en Docencia', 'Maestría', 'Facultad de Humanidades', 'Dra. Elena Vargas', '2026-I'),
+        ('MAE-MBA', 'Maestría en Administración de Negocios - MBA', 'Maestría', 'Facultad de Ciencias Empresariales', 'Dr. Roberto Sánchez', '2026-I'),
+        ('DOC-DER', 'Doctorado en Derecho y Ciencia Política', 'Doctorado', 'Facultad de Derecho', 'Dr. Alberto Benavides', '2026-I')
+    ]
+
+    prog_ids = {}
+    for cod, nom, niv, fac, dir_nom, per in programas:
+        c.execute("""
+        INSERT INTO sgc_programas (codigo, nombre, nivel, facultad, director, periodo_acreditacion)
+        VALUES (?, ?, ?, ?, ?, ?);
+        """, (cod, nom, niv, fac, dir_nom, per))
+        prog_ids[cod] = c.lastrowid
+
+    # 2. Crear Usuarios (Administrador General + 4 Responsables de Programa)
+    # Admin General (Supervisa el Dashboard Global)
     c.execute("""
-    INSERT INTO sgc_programas (codigo, nombre, nivel, facultad, director, mision, vision, periodo_acreditacion)
-    VALUES ('DOC-GPG', 'Doctorado en Gestión Pública y Gobernabilidad', 'Doctorado', 'Escuela de Posgrado', 'Dr. Juan Marcos Vilchez-Canchari', 
-            'Formar investigadores de alto nivel capaces de generar conocimiento científico para transformar las políticas públicas.',
-            'Ser un programa doctoral líder en Latinoamérica por su rigor científico e impacto social.', '2026-I');
-    """)
-    prog_id = c.lastrowid
+    INSERT INTO sgc_usuarios (username, password_hash, full_name, role, programa_id, email, cargo, avatar)
+    VALUES ('admin', ?, 'Dr. Carlos Mendoza', 'admin', NULL, 'calidad@universidad.edu.pe', 'Director General de Calidad y Acreditación', '👨‍💼');
+    """, (pwd,))
 
-    # 2. Inicializar los 34 estándares con valores realistas de autoevaluación
+    # Responsables de Programa
+    responsables = [
+        ('resp_gestion', pwd, 'Dr. Marcos Canchari', 'responsable', prog_ids['DOC-GPG'], 'mcanchari@universidad.edu.pe', 'Coordinador del Doctorado en Gestión Pública', '👨‍🏫'),
+        ('resp_educacion', pwd, 'Dra. Elena Vargas', 'responsable', prog_ids['MAE-EDU'], 'evargas@universidad.edu.pe', 'Coordinadora de la Maestría en Educación', '👩‍🏫'),
+        ('resp_mba', pwd, 'Dr. Roberto Sánchez', 'responsable', prog_ids['MAE-MBA'], 'rsanchez@universidad.edu.pe', 'Director de la Maestría MBA', '👨‍💼'),
+        ('resp_derecho', pwd, 'Dr. Alberto Benavides', 'responsable', prog_ids['DOC-DER'], 'abenavides@universidad.edu.pe', 'Coordinador del Doctorado en Derecho', '👨‍⚖️')
+    ]
+
+    c.executemany("""
+    INSERT INTO sgc_usuarios (username, password_hash, full_name, role, programa_id, email, cargo, avatar)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+    """, responsables)
+
+    # 3. Inicializar autoevaluaciones para cada uno de los 4 programas
     c.execute("SELECT id, numero FROM sgc_estandares ORDER BY numero ASC;")
     estandares = c.fetchall()
 
-    eval_data = []
-    for est in estandares:
-        num = est["numero"]
-        # Asignar estados realistas para tener un semáforo variado
-        if num in [1, 2, 7, 9, 10, 15, 23, 28, 30, 31]:
-            estado = "Cumple Plenamente"
-            pct = 100.0
-            just = f"El programa cuenta con evidencia documental completa, resoluciones de consejo y procesos digitalizados en el LMS para el Estándar {num}."
-            evid = f"Resolución Decanal N° 142-2025; Actas de Comité Consultivo; Reporte LMS 2026."
-            plan = "Mantenimiento del estándar y auditoría semestral."
-        elif num in [4, 5, 11, 14, 16, 20, 22, 24, 33]:
-            estado = "Cumple Parcial"
-            pct = 75.0
-            just = f"Existe implementación del 75% en las asignaturas y plataformas, con auditorías internas en curso para el Estándar {num}."
-            evid = f"Sílabos por competencias; Registro de Asesorías en Plataforma; Reporte Turnitin."
-            plan = f"Capacitar al 100% de la plana docente en el nuevo módulo de evaluación de competencias del LMS."
-        elif num in [3, 6, 8, 12, 13, 17, 19, 21, 25, 27, 32]:
-            estado = "En Proceso"
-            pct = 45.0
-            just = f"Se ha formulado la política y directiva interna, encontrándose en fase de recolección de evidencias para el Estándar {num}."
-            evid = f"Proyecto de Directiva 2026; Encuestas de satisfacción a maestrandos."
-            plan = f"Ejecutar el plan de acción aprobado en el Comité de Calidad antes de julio 2026."
-        else: # 18, 26, 29, 34
-            estado = "No Cumple"
-            pct = 15.0
-            just = f"Brecha identificada en la última autoevaluación institucional respecto al criterio de posgrado del Estándar {num}."
-            evid = f"Informe de Auditoría Interna N° 03-2025-SGC."
-            plan = f"Implementar el sistema de trazabilidad de graduados y seguimiento de impacto laboral."
+    for cod, p_id in prog_ids.items():
+        eval_data = []
+        for est in estandares:
+            num = est["numero"]
+            # Variaciones en los datos para que cada programa tenga métricas distintas
+            if (num + p_id) % 4 == 0:
+                estado = "Cumple Plenamente"
+                pct = 100.0
+                just = f"Evidencias auditadas y aprobadas por el Comité de Calidad del programa {cod}."
+                plan = "Mantenimiento preventivo de evidencias."
+            elif (num + p_id) % 3 == 0:
+                estado = "Cumple Parcial"
+                pct = 75.0
+                just = f"En proceso de implementación curricular en el LMS para el programa {cod}."
+                plan = "Completar la recolección de actas y encuestas de satisfacción."
+            elif (num + p_id) % 2 == 0:
+                estado = "En Proceso"
+                pct = 45.0
+                just = f"Elaboración de informe de línea de base en desarrollo."
+                plan = "Alinear sílabos y rúbricas al modelo de competencias de posgrado."
+            else:
+                estado = "No Cumple"
+                pct = 20.0
+                just = f"Brecha identificada en la auditoría inicial de autoevaluación."
+                plan = "Aprobar directiva interna y designar responsable operativo."
 
-        eval_data.append((prog_id, est["id"], estado, pct, just, evid, plan, "Comité de Calidad de Posgrado"))
+            eval_data.append((
+                p_id, est["id"], estado, pct, just,
+                f"Resolución N° 0{num}-2025-{cod}; Acta SGC-2026",
+                plan,
+                "Comité de Calidad del Programa"
+            ))
 
-    c.executemany("""
-    INSERT INTO sgc_autoevaluaciones (programa_id, estandar_id, estado_cumplimiento, porcentaje, justificacion, evidencias, plan_mejora, responsable)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-    """, eval_data)
+        c.executemany("""
+        INSERT INTO sgc_autoevaluaciones (programa_id, estandar_id, estado_cumplimiento, porcentaje, justificacion, evidencias_texto, plan_mejora, responsable)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+        """, eval_data)
 
-    # 3. Cursos de Posgrado vinculados al LMS
-    cursos = [
-        (prog_id, 'DOC-101', 'Epistemología y Diseño de la Investigación Científica', 'Ciclo I', 5, 'Dr. Roberto Sánchez', 'https://lms.posgrado.edu.pe/cursos/doc101'),
-        (prog_id, 'DOC-102', 'Políticas Públicas y Teoría del Estado', 'Ciclo I', 4, 'Dra. Elena Vargas', 'https://lms.posgrado.edu.pe/cursos/doc102'),
-        (prog_id, 'DOC-201', 'Seminario de Tesis I (Modelado Estadístico y Econometría)', 'Ciclo II', 6, 'Dr. Juan Marcos Vilchez', 'https://lms.posgrado.edu.pe/cursos/doc201'),
-        (prog_id, 'DOC-301', 'Seminario de Tesis II (Redacción de Artículo Scopus/WoS)', 'Ciclo III', 6, 'Dr. Alberto Benavides', 'https://lms.posgrado.edu.pe/cursos/doc301'),
-        (prog_id, 'DOC-401', 'Seminario de Tesis III (Defensa y Sustentación Doctoral)', 'Ciclo IV', 8, 'Dr. Juan Marcos Vilchez', 'https://lms.posgrado.edu.pe/cursos/doc401')
-    ]
-    c.executemany("""
-    INSERT INTO lms_cursos (programa_id, codigo, nombre, ciclo, creditos, docente_nombre, silabo_url)
-    VALUES (?, ?, ?, ?, ?, ?, ?);
-    """, cursos)
+        # Cursos de ejemplo para el programa
+        c.execute("""
+        INSERT INTO lms_cursos (programa_id, codigo, nombre, ciclo, creditos, docente_nombre, silabo_url)
+        VALUES (?, 'POS-101', 'Metodología de la Investigación de Posgrado', 'Ciclo I', 5, 'Dr. Investigador Principal', 'https://lms.posgrado.edu.pe');
+        """, (p_id,))
+        c.execute("""
+        INSERT INTO lms_cursos (programa_id, codigo, nombre, ciclo, creditos, docente_nombre, silabo_url)
+        VALUES (?, 'POS-201', 'Seminario de Tesis y Publicación Científica', 'Ciclo II', 6, 'Dr. Asesor de Tesis', 'https://lms.posgrado.edu.pe');
+        """, (p_id,))
 
-    # 4. Seguimiento de Tesis
-    tesistas = [
-        (prog_id, 'Mag. Carlos Paredes', 'Modelo de Inteligencia Artificial para la Gestión de Contrataciones Estatales', 'Gestión Pública y Tecnología', 'Dr. Juan Marcos Vilchez', 85.0, 8.5, 1, 1),
-        (prog_id, 'Mag. Patricia Morales', 'Impacto del Canon Minero en la Eficiencia del Gasto Social Municipal', 'Finanzas Públicas y Descentralización', 'Dr. Alberto Benavides', 70.0, 11.2, 1, 0),
-        (prog_id, 'Mag. Daniel Vega', 'Gobernanza Digital y Reducción de la Burocracia en Gobiernos Regionales', 'Políticas Públicas', 'Dra. Elena Vargas', 45.0, 14.0, 1, 0),
-        (prog_id, 'Mag. Lucía Alarcón', 'Eficiencia Hospitalaria Comparada en Redes de Salud Pública', 'Gestión en Salud Pública', 'Dr. Juan Marcos Vilchez', 95.0, 6.0, 1, 1)
-    ]
-    c.executemany("""
-    INSERT INTO lms_tesis_seguimiento (programa_id, estudiante_nombre, titulo_tesis, linea_investigacion, asesor_nombre, porcentaje_avance, similitud_turnitin, comite_etica_aprobado, articulo_publicado)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-    """, tesistas)
+        # Tesis de ejemplo
+        c.execute("""
+        INSERT INTO lms_tesis_seguimiento (programa_id, estudiante_nombre, titulo_tesis, linea_investigacion, asesor_nombre, porcentaje_avance, similitud_turnitin, comite_etica_aprobado, articulo_publicado)
+        VALUES (?, 'Tesista de Posgrado', 'Investigación Aplicada y Transformación Social', 'Línea de Investigación Central', 'Dr. Asesor Calificado', 75.0, 9.5, 1, 1);
+        """, (p_id,))
 
-    # 5. Docentes RENACYT
-    docentes = [
-        (prog_id, 'Dr. Juan Marcos Vilchez-Canchari', 'Doctor en Ingeniería / PhD', 'Principal', 1, 'Nivel I (Distinguido)', '0000-0002-1825-0097', 18),
-        (prog_id, 'Dr. Alberto Benavides', 'Doctor en Economía', 'Principal', 1, 'Nivel II', '0000-0003-4122-9012', 12),
-        (prog_id, 'Dra. Elena Vargas', 'Doctora en Ciencias Políticas', 'Asociada', 1, 'Nivel III', '0000-0001-8841-5523', 8),
-        (prog_id, 'Dr. Roberto Sánchez', 'Doctor en Filosofía y Epistemología', 'Principal', 1, 'Nivel IV', '0000-0002-7711-3091', 6)
-    ]
-    c.executemany("""
-    INSERT INTO lms_docentes (programa_id, nombre, grado_academico, categoria_docente, es_renacyt, nivel_renacyt, codigo_orcid, articulos_scopus_wos)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-    """, docentes)
+        # Docente RENACYT de ejemplo
+        c.execute("""
+        INSERT INTO lms_docentes (programa_id, nombre, grado_academico, categoria_docente, es_renacyt, nivel_renacyt, codigo_orcid, articulos_scopus_wos)
+        VALUES (?, 'Dr. Docente Investigador RENACYT', 'Doctor / PhD', 'Principal', 1, 'Nivel I', '0000-0002-1234-5678', 14);
+        """, (p_id,))
 
     conn.commit()
 
 
 # ==========================================
-# CONSULTAS PARA EL DASHBOARD DE ACREDITACIÓN
+# GESTIÓN DE USUARIOS Y AUTENTICACIÓN
+# ==========================================
+
+def authenticate_user(username, password):
+    conn = get_connection()
+    c = conn.cursor()
+    pwd_hash = hash_password(password)
+    c.execute("""
+    SELECT u.*, p.nombre as programa_nombre, p.codigo as programa_codigo
+    FROM sgc_usuarios u
+    LEFT JOIN sgc_programas p ON u.programa_id = p.id
+    WHERE u.username = ? AND u.password_hash = ?;
+    """, (username, pwd_hash))
+    user = c.fetchone()
+    conn.close()
+    return dict(user) if user else None
+
+
+def get_all_users():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+    SELECT u.id, u.username, u.full_name, u.role, u.email, u.cargo, u.avatar, p.nombre as programa_nombre
+    FROM sgc_usuarios u
+    LEFT JOIN sgc_programas p ON u.programa_id = p.id
+    ORDER BY u.role ASC, u.full_name ASC;
+    """)
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return rows
+
+
+# ==========================================
+# GESTIÓN DE PROGRAMAS
+# ==========================================
+
+def get_all_programs():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT * FROM sgc_programas ORDER BY nivel DESC, nombre ASC;")
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return rows
+
+
+def get_program_by_id(prog_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT * FROM sgc_programas WHERE id = ?;", (prog_id,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_all_programs_benchmark():
+    """Calcula métricas agregadas de todos los programas para el Dashboard del Administrador."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+    SELECT 
+        p.id, p.codigo, p.nombre, p.nivel, p.director,
+        AVG(a.porcentaje) as promedio_global,
+        SUM(CASE WHEN a.estado_cumplimiento = 'Cumple Plenamente' THEN 1 ELSE 0 END) as plenamente,
+        SUM(CASE WHEN a.estado_cumplimiento = 'Cumple Parcial' THEN 1 ELSE 0 END) as parcial,
+        SUM(CASE WHEN a.estado_cumplimiento = 'En Proceso' THEN 1 ELSE 0 END) as en_proceso,
+        SUM(CASE WHEN a.estado_cumplimiento = 'No Cumple' THEN 1 ELSE 0 END) as no_cumple,
+        COUNT(ev.id) as total_archivos_evidencia
+    FROM sgc_programas p
+    LEFT JOIN sgc_autoevaluaciones a ON p.id = a.programa_id
+    LEFT JOIN sgc_evidencias_archivos ev ON p.id = ev.programa_id
+    GROUP BY p.id
+    ORDER BY promedio_global DESC;
+    """)
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return rows
+
+
+# ==========================================
+# AUTOEVALUACIÓN Y EVIDENCIAS DIGITALES
 # ==========================================
 
 def get_program_summary(prog_id):
     conn = get_connection()
     c = conn.cursor()
 
-    # Promedio global ponderado
     c.execute("""
     SELECT 
         AVG(a.porcentaje) as promedio_global,
@@ -343,7 +482,7 @@ def get_program_summary(prog_id):
     """, (prog_id,))
     kpis = dict(c.fetchone())
 
-    # Promedio por dimensión (4 dimensiones)
+    # Promedio por dimensión
     c.execute("""
     SELECT 
         d.id, d.codigo, d.nombre, AVG(a.porcentaje) as promedio,
@@ -357,7 +496,7 @@ def get_program_summary(prog_id):
     """, (prog_id,))
     dimensiones_res = [dict(r) for r in c.fetchall()]
 
-    # Promedio por factor (12 factores)
+    # Promedio por factor
     c.execute("""
     SELECT 
         f.id, f.codigo, f.nombre, d.nombre as dimension_nombre, AVG(a.porcentaje) as promedio,
@@ -387,16 +526,17 @@ def get_all_standards_for_program(prog_id, filter_dimension=None, filter_factor=
         COALESCE(a.estado_cumplimiento, 'No Cumple') as estado_cumplimiento,
         COALESCE(a.porcentaje, 0.0) as porcentaje,
         COALESCE(a.justificacion, '') as justificacion,
-        COALESCE(a.evidencias, '') as evidencias,
+        COALESCE(a.evidencias_texto, '') as evidencias_texto,
         COALESCE(a.plan_mejora, '') as plan_mejora,
-        COALESCE(a.responsable, '') as responsable
+        COALESCE(a.responsable, '') as responsable,
+        (SELECT COUNT(*) FROM sgc_evidencias_archivos ev WHERE ev.programa_id = ? AND ev.estandar_id = e.id) as total_archivos
     FROM sgc_estandares e
     JOIN sgc_factores f ON e.factor_id = f.id
     JOIN sgc_dimensiones d ON f.dimension_id = d.id
     LEFT JOIN sgc_autoevaluaciones a ON e.id = a.estandar_id AND a.programa_id = ?
     WHERE 1=1
     """
-    params = [prog_id]
+    params = [prog_id, prog_id]
 
     if filter_dimension and filter_dimension != "Todas":
         query += " AND d.nombre = ?"
@@ -412,21 +552,73 @@ def get_all_standards_for_program(prog_id, filter_dimension=None, filter_factor=
     return rows
 
 
-def update_standard_evaluation(prog_id, estandar_id, estado, pct, just, evid, plan, resp):
+def update_standard_evaluation(prog_id, estandar_id, estado, pct, just, evid_texto, plan, resp):
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
-    INSERT INTO sgc_autoevaluaciones (programa_id, estandar_id, estado_cumplimiento, porcentaje, justificacion, evidencias, plan_mejora, responsable, updated_at)
+    INSERT INTO sgc_autoevaluaciones (programa_id, estandar_id, estado_cumplimiento, porcentaje, justificacion, evidencias_texto, plan_mejora, responsable, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(programa_id, estandar_id) DO UPDATE SET
         estado_cumplimiento = excluded.estado_cumplimiento,
         porcentaje = excluded.porcentaje,
         justificacion = excluded.justificacion,
-        evidencias = excluded.evidencias,
+        evidencias_texto = excluded.evidencias_texto,
         plan_mejora = excluded.plan_mejora,
         responsable = excluded.responsable,
         updated_at = CURRENT_TIMESTAMP;
-    """, (prog_id, estandar_id, estado, pct, just, evid, plan, resp))
+    """, (prog_id, estandar_id, estado, pct, just, evid_texto, plan, resp))
+    conn.commit()
+    conn.close()
+
+
+def save_uploaded_evidence(prog_id, estandar_id, uploaded_file, uploader_name):
+    """Guarda un archivo físico de evidencia en disco y lo registra en la base de datos."""
+    prog_dir = os.path.join(EVIDENCIAS_DIR, f"prog_{prog_id}", f"est_{estandar_id}")
+    os.makedirs(prog_dir, exist_ok=True)
+
+    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    clean_name = f"{timestamp_str}_{uploaded_file.name.replace(' ', '_')}"
+    file_path = os.path.join(prog_dir, clean_name)
+
+    with open(file_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+    INSERT INTO sgc_evidencias_archivos (programa_id, estandar_id, nombre_archivo, ruta_archivo, tamanio_bytes, subido_por)
+    VALUES (?, ?, ?, ?, ?, ?);
+    """, (prog_id, estandar_id, uploaded_file.name, file_path, uploaded_file.size, uploader_name))
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_standard_evidence_files(prog_id, estandar_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+    SELECT id, nombre_archivo, ruta_archivo, tamanio_bytes, subido_por, fecha_subida
+    FROM sgc_evidencias_archivos
+    WHERE programa_id = ? AND estandar_id = ?
+    ORDER BY fecha_subida DESC;
+    """, (prog_id, estandar_id))
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return rows
+
+
+def delete_evidence_file(file_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT ruta_archivo FROM sgc_evidencias_archivos WHERE id = ?;", (file_id,))
+    row = c.fetchone()
+    if row and os.path.exists(row["ruta_archivo"]):
+        try:
+            os.remove(row["ruta_archivo"])
+        except Exception:
+            pass
+    c.execute("DELETE FROM sgc_evidencias_archivos WHERE id = ?;", (file_id,))
     conn.commit()
     conn.close()
 
