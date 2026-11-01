@@ -17,11 +17,26 @@ AVAILABLE_MODELS = [
 
 
 def get_api_key():
-    if "GEMINI_API_KEY" in st.secrets:
-        return st.secrets["GEMINI_API_KEY"]
+    try:
+        if "GEMINI_API_KEY" in st.secrets:
+            return st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        pass
     if "GEMINI_API_KEY" in os.environ:
         return os.environ["GEMINI_API_KEY"]
-    return st.session_state.get("custom_api_key", None)
+    # Buscar en archivo local .streamlit/secrets.toml
+    local_sec = os.path.join(os.path.dirname(__file__), ".streamlit", "secrets.toml")
+    if os.path.exists(local_sec):
+        try:
+            with open(local_sec, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip().startswith("GEMINI_API_KEY"):
+                        return line.split("=", 1)[1].strip().strip('"').strip("'")
+        except Exception:
+            pass
+    if hasattr(st, "session_state"):
+        return st.session_state.get("custom_api_key", None)
+    return None
 
 
 SYSTEM_AUDITOR_PROMPT = """
