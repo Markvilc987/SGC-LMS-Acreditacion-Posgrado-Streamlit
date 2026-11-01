@@ -21,9 +21,9 @@ from database import (
 )
 from auditor_ia import consultar_auditor_sgc, get_api_key
 
-# Configuración de página institucional
+# Configuración de página institucional UCV
 st.set_page_config(
-    page_title="SGC-Posgrado | Sistema de Acreditación y Evidencias LMS",
+    page_title="SGC-Posgrado UCV | Escuela de Posgrado Universidad César Vallejo",
     page_icon="🏛️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -36,27 +36,40 @@ init_db()
 if "user" not in st.session_state:
     st.session_state.user = None
 
-# Estilos CSS ejecutivos y roles
+# Estilos CSS ejecutivos con identidad institucional UCV (Azul Marino y Rojo Vallejo)
 st.markdown("""
 <style>
     .sgc-header {
-        background: linear-gradient(135deg, #1E3A8A 0%, #0F172A 100%);
+        background: linear-gradient(135deg, #0B2545 0%, #132E59 50%, #8B0000 100%);
         border-radius: 12px;
-        padding: 22px 26px;
+        padding: 24px 28px;
         color: white;
         margin-bottom: 22px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        box-shadow: 0 6px 18px rgba(11, 37, 69, 0.2);
+        border-bottom: 4px solid #C8102E;
+    }
+    .sgc-badge-ucv {
+        background-color: #C8102E;
+        color: white;
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 800;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        display: inline-block;
+        margin-bottom: 6px;
     }
     .sgc-title {
-        font-size: 2.0rem;
+        font-size: 2.1rem;
         font-weight: 800;
         margin: 0;
         letter-spacing: -0.5px;
     }
     .sgc-sub {
-        font-size: 1.0rem;
-        opacity: 0.9;
-        margin-top: 5px;
+        font-size: 1.02rem;
+        opacity: 0.95;
+        margin-top: 6px;
     }
     .kpi-box {
         background: white;
@@ -69,7 +82,7 @@ st.markdown("""
     .kpi-number {
         font-size: 2.1rem;
         font-weight: 800;
-        color: #1E3A8A;
+        color: #0B2545;
     }
     .kpi-text {
         font-size: 0.82rem;
@@ -80,7 +93,7 @@ st.markdown("""
     }
     .criterio-card {
         background-color: #F8FAFC;
-        border-left: 4px solid #1E3A8A;
+        border-left: 4px solid #0B2545;
         padding: 12px 16px;
         border-radius: 0 8px 8px 0;
         margin-bottom: 12px;
@@ -93,14 +106,16 @@ st.markdown("""
         border-radius: 8px;
         font-size: 0.85rem;
         font-weight: 700;
+        border: 1px solid #FCD34D;
     }
     .badge-responsable {
         background-color: #EEF2FF;
-        color: #4338CA;
+        color: #1E3A8A;
         padding: 4px 10px;
         border-radius: 8px;
         font-size: 0.85rem;
         font-weight: 700;
+        border: 1px solid #C7D2FE;
     }
     .badge-cumple {
         background-color: #DEF7EC;
@@ -136,8 +151,9 @@ st.markdown("""
     }
 </style>
 <div class="sgc-header">
-    <div class="sgc-title">🏛️ SGC-Posgrado | Sistema Integrado de Acreditación y Evidencias</div>
-    <div class="sgc-sub">Modelo Oficial SINEACE / SUNEDU: <strong>4 Dimensiones • 12 Factores • 34 Estándares de Calidad</strong></div>
+    <span class="sgc-badge-ucv">UNIVERSIDAD CÉSAR VALLEJO • ESCUELA DE POSGRADO</span>
+    <div class="sgc-title">🏛️ SGC-Posgrado | Sistema de Acreditación y Evidencias Digitales LMS</div>
+    <div class="sgc-sub">Modelo Oficial SINEACE / SUNEDU: <strong>4 Dimensiones • 12 Factores • 34 Estándares de Calidad Universitaria</strong></div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -196,14 +212,14 @@ with st.sidebar:
 # ==========================================
 
 if not st.session_state.user:
-    st.markdown("## 🔐 Inicio de Sesión Institucional")
-    st.write("Bienvenido al Sistema de Gestión de la Calidad y Acreditación de Posgrado. Selecciona tu perfil o ingresa tus credenciales:")
+    st.markdown("## 🔐 Inicio de Sesión Institucional | Escuela de Posgrado UCV")
+    st.write("Bienvenido al Sistema de Gestión de la Calidad y Acreditación de Posgrado de la Universidad César Vallejo. Selecciona tu perfil o ingresa tus credenciales:")
 
-    col_l1, col_l2 = st.columns([1, 1.2])
+    col_l1, col_l2 = st.columns([1, 1.3])
 
     with col_l1:
-        st.subheader("🔑 Ingreso con Credenciales")
-        log_u = st.text_input("Usuario:", key="in_u")
+        st.subheader("🔑 Ingreso con Credenciales Institucionales")
+        log_u = st.text_input("Usuario UCV:", key="in_u", placeholder="Ej. jvilchez, admin_ucv")
         log_p = st.text_input("Contraseña:", type="password", key="in_p")
         if st.button("Iniciar Sesión", type="primary", use_container_width=True):
             auth = authenticate_user(log_u.strip(), log_p.strip())
@@ -212,33 +228,54 @@ if not st.session_state.user:
                 st.success(f"¡Bienvenido, {auth['full_name']}!")
                 st.rerun()
             else:
-                st.error("Credenciales incorrectas.")
+                st.error("Credenciales incorrectas. (Prueba con usuario y contraseña demo: clave123)")
+
+        st.info("💡 **Credencial de prueba global:** Todas las cuentas demo utilizan la contraseña: `clave123`")
 
     with col_l2:
         st.subheader("⚡ Acceso Rápido Demostrativo (1 Clic)")
-        st.caption("Prueba los diferentes roles del sistema sin escribir contraseñas:")
+        st.caption("Prueba los diferentes perfiles institucionales de la Escuela de Posgrado UCV:")
 
-        # Botón Admin
-        if st.button("👨‍💼 Ingresar como Administrador General (Director de Calidad)", use_container_width=True):
-            st.session_state.user = authenticate_user("admin", "clave123")
+        # Botón Director de Calidad UCV
+        if st.button("🏛️ Director Aseguramiento de la Calidad UCV (Dr. Carlos Mendoza Dávila)", type="secondary", use_container_width=True):
+            st.session_state.user = authenticate_user("admin_ucv", "clave123")
             st.rerun()
 
         st.markdown("---")
-        st.markdown("**Responsables por Programa de Posgrado:**")
-        r_col1, r_col2 = st.columns(2)
-        with r_col1:
-            if st.button("👨‍🏫 Responsable: Doctorado en Gestión Pública", use_container_width=True):
-                st.session_state.user = authenticate_user("resp_gestion", "clave123")
+        st.markdown("**Responsables y Coordinadores de Programa UCV:**")
+
+        st.markdown("🎓 **Doctorados UCV:**")
+        d_col1, d_col2 = st.columns(2)
+        with d_col1:
+            if st.button("👨‍🏫 Dr. Juan Marcos Vilchez-Canchari\n(Doc. Gestión Pública)", use_container_width=True):
+                st.session_state.user = authenticate_user("jvilchez", "clave123")
                 st.rerun()
-            if st.button("👩‍🏫 Responsable: Maestría en Educación", use_container_width=True):
-                st.session_state.user = authenticate_user("resp_educacion", "clave123")
+            if st.button("👩‍🏫 Dra. Elena Vargas Morales\n(Doc. Educación)", use_container_width=True):
+                st.session_state.user = authenticate_user("evargas", "clave123")
                 st.rerun()
-        with r_col2:
-            if st.button("👨‍💼 Responsable: Maestría MBA", use_container_width=True):
-                st.session_state.user = authenticate_user("resp_mba", "clave123")
+        with d_col2:
+            if st.button("👨‍💼 Dr. Roberto Sánchez Romero\n(Doc. Administración)", use_container_width=True):
+                st.session_state.user = authenticate_user("rsanchez", "clave123")
                 st.rerun()
-            if st.button("👨‍⚖️ Responsable: Doctorado en Derecho", use_container_width=True):
-                st.session_state.user = authenticate_user("resp_derecho", "clave123")
+            if st.button("👨‍⚖️ Dr. Alberto Benavides Ruiz\n(Doc. Derecho)", use_container_width=True):
+                st.session_state.user = authenticate_user("abenavides", "clave123")
+                st.rerun()
+
+        st.markdown("📚 **Maestrías UCV:**")
+        m_col1, m_col2 = st.columns(2)
+        with m_col1:
+            if st.button("👨‍💼 Mag. Carlos Mendoza Dávila\n(Mtr. Gestión Pública)", use_container_width=True):
+                st.session_state.user = authenticate_user("cmendoza", "clave123")
+                st.rerun()
+            if st.button("💼 Mag. Ricardo Paredes Campos\n(Maestría MBA UCV)", use_container_width=True):
+                st.session_state.user = authenticate_user("rparedes", "clave123")
+                st.rerun()
+        with m_col2:
+            if st.button("👩‍🏫 Dra. Patricia Morales Soto\n(Mtr. Docencia Univ.)", use_container_width=True):
+                st.session_state.user = authenticate_user("pmorales", "clave123")
+                st.rerun()
+            if st.button("👩‍⚕️ Dra. Lucía Alarcón Medina\n(Mtr. Salud Pública)", use_container_width=True):
+                st.session_state.user = authenticate_user("lalarcon", "clave123")
                 st.rerun()
 
     st.stop()
@@ -572,7 +609,7 @@ else:
         with sl2:
             df_t_r = pd.DataFrame(t_data)
             if not df_t_r.empty:
-                df_t_r["alerta"] = df_t_r["similitud_turnitin"].apply(lambda x: "🟢 Aceptable" if x <= 12 else "🔴 Alerta")
+                df_t_r["alerta"] = df_t_r["similitud_turnitin"].apply(lambda x: "🟢 Aceptable (≤20% CEI-UCV)" if x <= 20 else "🔴 Alerta (>20%)")
                 st.dataframe(df_t_r[["estudiante_nombre", "titulo_tesis", "asesor_nombre", "porcentaje_avance", "similitud_turnitin", "alerta"]], use_container_width=True, hide_index=True)
             else:
                 st.info("Sin proyectos de tesis.")

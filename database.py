@@ -280,12 +280,16 @@ def seed_multi_programs_and_users(conn):
     c = conn.cursor()
     pwd = hash_password("clave123")
 
-    # 1. Crear 4 Programas de Posgrado
+    # 1. Crear Programas Oficiales de Posgrado de la Universidad César Vallejo (UCV)
     programas = [
-        ('DOC-GPG', 'Doctorado en Gestión Pública y Gobernabilidad', 'Doctorado', 'Escuela de Posgrado', 'Dr. Marcos Canchari', '2026-I'),
-        ('MAE-EDU', 'Maestría en Educación con Mención en Docencia', 'Maestría', 'Facultad de Humanidades', 'Dra. Elena Vargas', '2026-I'),
-        ('MAE-MBA', 'Maestría en Administración de Negocios - MBA', 'Maestría', 'Facultad de Ciencias Empresariales', 'Dr. Roberto Sánchez', '2026-I'),
-        ('DOC-DER', 'Doctorado en Derecho y Ciencia Política', 'Doctorado', 'Facultad de Derecho', 'Dr. Alberto Benavides', '2026-I')
+        ('DOC-GPG-UCV', 'Doctorado en Gestión Pública y Gobernabilidad', 'Doctorado', 'Escuela de Posgrado UCV', 'Dr. Juan Marcos Vilchez-Canchari', '2026-I'),
+        ('DOC-EDU-UCV', 'Doctorado en Educación', 'Doctorado', 'Escuela de Posgrado UCV', 'Dra. Elena Vargas Morales', '2026-I'),
+        ('DOC-ADM-UCV', 'Doctorado en Administración', 'Doctorado', 'Escuela de Posgrado UCV', 'Dr. Roberto Sánchez Romero', '2026-I'),
+        ('DOC-DER-UCV', 'Doctorado en Derecho', 'Doctorado', 'Escuela de Posgrado UCV', 'Dr. Alberto Benavides Ruiz', '2026-I'),
+        ('MAE-GP-UCV', 'Maestría en Gestión Pública', 'Maestría', 'Escuela de Posgrado UCV', 'Mag. Carlos Mendoza Dávila', '2026-I'),
+        ('MAE-MBA-UCV', 'Maestría en Administración de Negocios - MBA', 'Maestría', 'Escuela de Posgrado UCV', 'Mag. Ricardo Paredes Campos', '2026-I'),
+        ('MAE-MDU-UCV', 'Maestría en Docencia Universitaria', 'Maestría', 'Escuela de Posgrado UCV', 'Dra. Patricia Morales Soto', '2026-I'),
+        ('MAE-MSP-UCV', 'Maestría en Salud Pública', 'Maestría', 'Escuela de Posgrado UCV', 'Dra. Lucía Alarcón Medina', '2026-I')
     ]
 
     prog_ids = {}
@@ -296,19 +300,23 @@ def seed_multi_programs_and_users(conn):
         """, (cod, nom, niv, fac, dir_nom, per))
         prog_ids[cod] = c.lastrowid
 
-    # 2. Crear Usuarios (Administrador General + 4 Responsables de Programa)
-    # Admin General (Supervisa el Dashboard Global)
+    # 2. Crear Usuarios UCV (Administrador General de Calidad UCV + Responsables por Programa)
+    # Admin General UCV
     c.execute("""
     INSERT INTO sgc_usuarios (username, password_hash, full_name, role, programa_id, email, cargo, avatar)
-    VALUES ('admin', ?, 'Dr. Carlos Mendoza', 'admin', NULL, 'calidad@universidad.edu.pe', 'Director General de Calidad y Acreditación', '👨‍💼');
+    VALUES ('admin_ucv', ?, 'Dr. Carlos Mendoza Dávila', 'admin', NULL, 'calidad.posgrado@ucv.edu.pe', 'Director de Aseguramiento de la Calidad - Escuela de Posgrado UCV', '🏛️');
     """, (pwd,))
 
-    # Responsables de Programa
+    # Responsables de Programa UCV
     responsables = [
-        ('resp_gestion', pwd, 'Dr. Marcos Canchari', 'responsable', prog_ids['DOC-GPG'], 'mcanchari@universidad.edu.pe', 'Coordinador del Doctorado en Gestión Pública', '👨‍🏫'),
-        ('resp_educacion', pwd, 'Dra. Elena Vargas', 'responsable', prog_ids['MAE-EDU'], 'evargas@universidad.edu.pe', 'Coordinadora de la Maestría en Educación', '👩‍🏫'),
-        ('resp_mba', pwd, 'Dr. Roberto Sánchez', 'responsable', prog_ids['MAE-MBA'], 'rsanchez@universidad.edu.pe', 'Director de la Maestría MBA', '👨‍💼'),
-        ('resp_derecho', pwd, 'Dr. Alberto Benavides', 'responsable', prog_ids['DOC-DER'], 'abenavides@universidad.edu.pe', 'Coordinador del Doctorado en Derecho', '👨‍⚖️')
+        ('jvilchez', pwd, 'Dr. Juan Marcos Vilchez-Canchari', 'responsable', prog_ids['DOC-GPG-UCV'], 'jvilchezca@ucv.edu.pe', 'Coordinador del Doctorado en Gestión Pública y Gobernabilidad', '👨‍🏫'),
+        ('evargas', pwd, 'Dra. Elena Vargas Morales', 'responsable', prog_ids['DOC-EDU-UCV'], 'evargasm@ucvvirtual.edu.pe', 'Coordinadora del Doctorado en Educación', '👩‍🏫'),
+        ('rsanchez', pwd, 'Dr. Roberto Sánchez Romero', 'responsable', prog_ids['DOC-ADM-UCV'], 'rsanchezr@ucvvirtual.edu.pe', 'Coordinador del Doctorado en Administración', '👨‍💼'),
+        ('abenavides', pwd, 'Dr. Alberto Benavides Ruiz', 'responsable', prog_ids['DOC-DER-UCV'], 'abenavidesr@ucvvirtual.edu.pe', 'Coordinador del Doctorado en Derecho', '👨‍⚖️'),
+        ('cmendoza', pwd, 'Mag. Carlos Mendoza Dávila', 'responsable', prog_ids['MAE-GP-UCV'], 'cmendozad@ucvvirtual.edu.pe', 'Coordinador de la Maestría en Gestión Pública', '👨‍💼'),
+        ('rparedes', pwd, 'Mag. Ricardo Paredes Campos', 'responsable', prog_ids['MAE-MBA-UCV'], 'rparedesc@ucvvirtual.edu.pe', 'Director de la Maestría MBA UCV', '💼'),
+        ('pmorales', pwd, 'Dra. Patricia Morales Soto', 'responsable', prog_ids['MAE-MDU-UCV'], 'pmoraless@ucvvirtual.edu.pe', 'Coordinadora de la Maestría en Docencia Universitaria', '👩‍🏫'),
+        ('lalarcon', pwd, 'Dra. Lucía Alarcón Medina', 'responsable', prog_ids['MAE-MSP-UCV'], 'lalarconm@ucvvirtual.edu.pe', 'Coordinadora de la Maestría en Salud Pública', '👩‍⚕️')
     ]
 
     c.executemany("""
@@ -358,26 +366,30 @@ def seed_multi_programs_and_users(conn):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?);
         """, eval_data)
 
-        # Cursos de ejemplo para el programa
+        # Cursos de ejemplo alineados a la malla curricular de Posgrado UCV
         c.execute("""
         INSERT INTO lms_cursos (programa_id, codigo, nombre, ciclo, creditos, docente_nombre, silabo_url)
-        VALUES (?, 'POS-101', 'Metodología de la Investigación de Posgrado', 'Ciclo I', 5, 'Dr. Investigador Principal', 'https://lms.posgrado.edu.pe');
+        VALUES (?, 'POS-101', 'Metodología y Diseño de la Investigación Científica', 'Ciclo I', 5, 'Dr. Juan Marcos Vilchez-Canchari', 'https://campusvirtual.ucv.edu.pe/cursos/pos101');
         """, (p_id,))
         c.execute("""
         INSERT INTO lms_cursos (programa_id, codigo, nombre, ciclo, creditos, docente_nombre, silabo_url)
-        VALUES (?, 'POS-201', 'Seminario de Tesis y Publicación Científica', 'Ciclo II', 6, 'Dr. Asesor de Tesis', 'https://lms.posgrado.edu.pe');
+        VALUES (?, 'POS-201', 'Seminario de Tesis I (Modelado y Análisis de Datos)', 'Ciclo II', 6, 'Dr. Investigador RENACYT UCV', 'https://campusvirtual.ucv.edu.pe/cursos/pos201');
+        """, (p_id,))
+        c.execute("""
+        INSERT INTO lms_cursos (programa_id, codigo, nombre, ciclo, creditos, docente_nombre, silabo_url)
+        VALUES (?, 'POS-301', 'Seminario de Tesis II (Redacción de Artículo Scopus/WoS)', 'Ciclo III', 6, 'Dr. Docente Renacyt UCV', 'https://campusvirtual.ucv.edu.pe/cursos/pos301');
         """, (p_id,))
 
-        # Tesis de ejemplo
+        # Tesis de ejemplo con política de integridad académica UCV (Turnitin CEI-UCV)
         c.execute("""
         INSERT INTO lms_tesis_seguimiento (programa_id, estudiante_nombre, titulo_tesis, linea_investigacion, asesor_nombre, porcentaje_avance, similitud_turnitin, comite_etica_aprobado, articulo_publicado)
-        VALUES (?, 'Tesista de Posgrado', 'Investigación Aplicada y Transformación Social', 'Línea de Investigación Central', 'Dr. Asesor Calificado', 75.0, 9.5, 1, 1);
+        VALUES (?, 'Mag. Tesista Doctoral UCV', 'Modernización de la Gestión Pública y Eficiencia del Gasto Social en el Perú', 'Gestión Pública y Políticas Sociales', 'Dr. Juan Marcos Vilchez-Canchari', 85.0, 8.5, 1, 1);
         """, (p_id,))
 
-        # Docente RENACYT de ejemplo
+        # Docente RENACYT UCV
         c.execute("""
         INSERT INTO lms_docentes (programa_id, nombre, grado_academico, categoria_docente, es_renacyt, nivel_renacyt, codigo_orcid, articulos_scopus_wos)
-        VALUES (?, 'Dr. Docente Investigador RENACYT', 'Doctor / PhD', 'Principal', 1, 'Nivel I', '0000-0002-1234-5678', 14);
+        VALUES (?, 'Dr. Juan Marcos Vilchez-Canchari', 'Doctor en Ingeniería / PhD', 'Principal', 1, 'Nivel I (Distinguido)', '0000-0002-1825-0097', 18);
         """, (p_id,))
 
     conn.commit()
